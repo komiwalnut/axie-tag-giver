@@ -1,0 +1,13 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+DISCORD_API_KEY = os.getenv('DISCORD_API_KEY')
+CHANNEL_ID = int('916398226813370419')
+ROLE_ID = int('1371506589806100590')
+DISCORD_GUILD_ID = int('410537146672349205')
+SERVER_LINK = 'https://discord.gg/GkaVv8vfp3'
+REQUIRED_TAG = 'AXIE'
+REQUIRED_GUILD_ID = '1369851009827999907'
