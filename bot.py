@@ -121,7 +121,7 @@ class ClaimRoleView(discord.ui.View):
                     else:
                         logger.info(f"User {user_id} does not have required server tag")
                         embed = discord.Embed(
-                            title="Sserver Tag Not Found",
+                            title="Server Tag Not Found",
                             description=f"You need to have the `[{REQUIRED_TAG}]` server tag to claim this role.\n\n[Join our server]({SERVER_LINK})",
                             color=discord.Color.red()
                         )
