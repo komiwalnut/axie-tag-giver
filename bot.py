@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 from config import *
 import logging
+import asyncio
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,39 +61,67 @@ class ClaimRoleView(discord.ui.View):
                     if user_data.get('clan') and user_data['clan'].get('tag') == REQUIRED_TAG and user_data['clan'].get('identity_guild_id') == REQUIRED_GUILD_ID:
                         role = discord.utils.get(interaction.guild.roles, id=ROLE_ID)
 
-                        if role not in interaction.user.roles:
-                            await interaction.user.add_roles(role)
-                            logger.info(f"Added role to user {user_id}")
-
-                            with open('users.json', 'r') as f:
-                                users = json.load(f)
-
-                            users[user_id] = {
-                                'username': interaction.user.name,
-                                'added_date': datetime.now().isoformat()
-                            }
-
-                            with open('users.json', 'w') as f:
-                                json.dump(users, f, indent=4)
-
+                        if not role:
+                            logger.error(f"Role with ID {ROLE_ID} not found")
                             embed = discord.Embed(
-                                title="Success!",
-                                description=f"You have been given the {role.name} role!",
-                                color=discord.Color.green()
+                                title="Configuration Error",
+                                description="`Axie Tag Bearer` role was not found. Please contact a mod.",
+                                color=discord.Color.red()
                             )
                             await interaction.followup.send(embed=embed, ephemeral=True)
+                            return
+
+                        if role not in interaction.user.roles:
+                            try:
+                                await interaction.user.add_roles(role)
+                                logger.info(f"Added role to user {user_id}")
+
+                                with open('users.json', 'r') as f:
+                                    users = json.load(f)
+
+                                users[user_id] = {
+                                    'username': interaction.user.name,
+                                    'added_date': datetime.now().isoformat()
+                                }
+
+                                with open('users.json', 'w') as f:
+                                    json.dump(users, f, indent=4)
+
+                                embed = discord.Embed(
+                                    title="Success!",
+                                    description=f"You have been given the `{role.name}` role!",
+                                    color=discord.Color.green()
+                                )
+                                await interaction.followup.send(embed=embed, ephemeral=True)
+                            except discord.Forbidden:
+                                logger.error(f"Missing permissions to add role to user {user_id}")
+                                embed = discord.Embed(
+                                    title="Permission Error",
+                                    description="I don't have permission to assign this role. Please contact a mod.",
+                                    color=discord.Color.red()
+                                )
+
+                                await interaction.followup.send(embed=embed, ephemeral=True)
+                            except Exception as err:
+                                logger.error(f"Unexpected error when adding role to user {user_id}: {err}")
+                                embed = discord.Embed(
+                                    title="Error",
+                                    description="An unexpected error occurred. Please try again later.",
+                                    color=discord.Color.red()
+                                )
+                                await interaction.followup.send(embed=embed, ephemeral=True)
                         else:
                             logger.info(f"User {user_id} already has the role")
                             embed = discord.Embed(
-                                title="Role Already Claimed!",
-                                description="You already have this role!",
+                                title="Already Have Role",
+                                description="You already have the `Axie Tag Bearer` role!",
                                 color=discord.Color.orange()
                             )
                             await interaction.followup.send(embed=embed, ephemeral=True)
                     else:
                         logger.info(f"User {user_id} does not have required server tag")
                         embed = discord.Embed(
-                            title="Server Tag Not Found",
+                            title="Sserver Tag Not Found",
                             description=f"You need to have the `[{REQUIRED_TAG}]` server tag to claim this role.\n\n[Join our server]({SERVER_LINK})",
                             color=discord.Color.red()
                         )
@@ -170,6 +199,8 @@ async def daily_clan_check():
 
     removed_users = []
 
+    logger.info(f"Checking {len(users)} users")
+
     for user_id, user_info in list(users.items()):
         async with aiohttp.ClientSession() as session:
             async with session.get(f'https://discord.com/api/v10/users/{user_id}', headers=headers) as resp:
@@ -183,8 +214,15 @@ async def daily_clan_check():
                             del users[user_id]
                             removed_users.append(user_id)
                             logger.info(f"Removed role from user {user_id} - server tag no longer valid")
+                elif resp.status == 429:
+                    retry_after = int(resp.headers.get('Retry-After', 60))
+                    logger.warning(f"Rate limited, waiting {retry_after} seconds")
+                    await asyncio.sleep(retry_after)
+                    continue
                 else:
                     logger.error(f"Failed to check user {user_id}: Status {resp.status}")
+
+        await asyncio.sleep(0.5)
 
     with open('users.json', 'w') as f:
         json.dump(users, f, indent=4)
