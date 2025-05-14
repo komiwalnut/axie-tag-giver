@@ -54,69 +54,79 @@ class ClaimRoleView(discord.ui.View):
             'Authorization': DISCORD_API_KEY
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f'https://discord.com/api/v10/users/{user_id}', headers=headers) as resp:
-                if resp.status == 200:
-                    user_data = await resp.json()
-                    logger.debug(f"API response for {user_id}: {user_data}")
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            try:
+                async with session.get(f'https://discord.com/api/v10/users/{user_id}', headers=headers) as resp:
+                    if resp.status == 200:
+                        user_data = await resp.json()
+                        logger.debug(f"API response for {user_id}: {user_data}")
 
-                    if user_data.get('clan') and user_data['clan'].get('tag') == REQUIRED_TAG and user_data['clan'].get('identity_guild_id') == REQUIRED_GUILD_ID:
-                        role = discord.utils.get(interaction.guild.roles, id=ROLE_ID)
+                        if user_data.get('clan') and user_data['clan'].get('tag') == REQUIRED_TAG and user_data['clan'].get('identity_guild_id') == REQUIRED_GUILD_ID:
+                            role = discord.utils.get(interaction.guild.roles, id=ROLE_ID)
 
-                        if role not in interaction.user.roles:
-                            try:
-                                await interaction.user.add_roles(role)
-                                logger.info(f"Added role to user {user_id}")
+                            if role not in interaction.user.roles:
+                                try:
+                                    await interaction.user.add_roles(role)
+                                    logger.info(f"Added role to user {user_id}")
 
-                                with open('users.json', 'r') as f:
-                                    users = json.load(f)
+                                    with open('users.json', 'r') as f:
+                                        users = json.load(f)
 
-                                users[user_id] = {
-                                    'username': interaction.user.name,
-                                    'added_date': datetime.now().isoformat()
-                                }
+                                    users[user_id] = {
+                                        'username': interaction.user.name,
+                                        'added_date': datetime.now().isoformat()
+                                    }
 
-                                with open('users.json', 'w') as f:
-                                    json.dump(users, f, indent=4)
+                                    with open('users.json', 'w') as f:
+                                        json.dump(users, f, indent=4)
 
+                                    embed = discord.Embed(
+                                        title="Success!",
+                                        description=f"You have been given the <@&1371506589806100590> role!",
+                                        color=discord.Color.green()
+                                    )
+                                    await interaction.followup.send(embed=embed, ephemeral=True)
+                                except Exception as err:
+                                    logger.error(f"Unexpected error when adding role to user {user_id}: {err}")
+                                    embed = discord.Embed(
+                                        title="Error",
+                                        description="An unexpected error occurred. Please try again later.",
+                                        color=discord.Color.red()
+                                    )
+                                    await interaction.followup.send(embed=embed, ephemeral=True)
+                            else:
+                                logger.info(f"User {user_id} already has the role")
                                 embed = discord.Embed(
-                                    title="Success!",
-                                    description=f"You have been given the <@&1371506589806100590> role!",
-                                    color=discord.Color.green()
-                                )
-                                await interaction.followup.send(embed=embed, ephemeral=True)
-                            except Exception as err:
-                                logger.error(f"Unexpected error when adding role to user {user_id}: {err}")
-                                embed = discord.Embed(
-                                    title="Error",
-                                    description="An unexpected error occurred. Please try again later.",
-                                    color=discord.Color.red()
+                                    title="Already Have Role",
+                                    description="You already have this role!",
+                                    color=discord.Color.orange()
                                 )
                                 await interaction.followup.send(embed=embed, ephemeral=True)
                         else:
-                            logger.info(f"User {user_id} already has the role")
+                            logger.info(f"User {user_id} does not have required clan tag")
                             embed = discord.Embed(
-                                title="Already Have Role",
-                                description="You already have this role!",
-                                color=discord.Color.orange()
+                                title="Clan Tag Not Found",
+                                description=f"You need to have the [{REQUIRED_TAG}] clan tag to claim this role.\n\n[Join our server]({SERVER_LINK})",
+                                color=discord.Color.red()
                             )
                             await interaction.followup.send(embed=embed, ephemeral=True)
                     else:
-                        logger.info(f"User {user_id} does not have required clan tag")
+                        logger.error(f"API request failed for user {user_id}: Status {resp.status}")
                         embed = discord.Embed(
-                            title="Clan Tag Not Found",
-                            description=f"You need to have the [{REQUIRED_TAG}] clan tag to claim this role.\n\n[Join our server]({SERVER_LINK})",
+                            title="Error",
+                            description="Failed to check your clan tag. Please try again later.",
                             color=discord.Color.red()
                         )
                         await interaction.followup.send(embed=embed, ephemeral=True)
-                else:
-                    logger.error(f"API request failed for user {user_id}: Status {resp.status}")
-                    embed = discord.Embed(
-                        title="Error",
-                        description="Failed to check your clan tag. Please try again later.",
-                        color=discord.Color.red()
-                    )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+            except asyncio.TimeoutError:
+                logger.error(f"Request timeout for user {user_id}")
+                embed = discord.Embed(
+                    title="Error",
+                    description="Request timed out. Please try again later.",
+                    color=discord.Color.red()
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 @bot.event
@@ -166,69 +176,119 @@ async def setup_claim_message():
         json.dump({'message_id': sent_message.id}, f)
 
 
-@tasks.loop(hours=8)
+async def check_user_clan_tag(session, user_id, headers):
+    max_retries = 3
+    base_delay = 1.0
+
+    for attempt in range(max_retries):
+        try:
+            async with session.get(f'https://discord.com/api/v10/users/{user_id}', headers=headers) as resp:
+                remaining = resp.headers.get('X-RateLimit-Remaining')
+                if remaining:
+                    logger.debug(f"Rate limit remaining: {remaining}")
+
+                if resp.status == 200:
+                    user_data = await resp.json()
+                    return user_data, None
+                elif resp.status == 429:
+                    retry_after = float(resp.headers.get('Retry-After', 60))
+                    logger.warning(f"Rate limited for user {user_id}, waiting {retry_after} seconds")
+                    await asyncio.sleep(retry_after + 1)
+                    continue
+                else:
+                    return None, f"Status {resp.status}"
+
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout for user {user_id} on attempt {attempt + 1}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(base_delay * (attempt + 1))
+                continue
+            return None, "Timeout"
+        except Exception as err:
+            logger.error(f"Error checking user {user_id}: {err}")
+            return None, str(err)
+
+    return None, "Max retries exceeded"
+
+
+@tasks.loop(hours=12)
 async def daily_clan_check():
     logger.info("Starting daily clan check")
 
     with open('users.json', 'r') as f:
         users = json.load(f)
 
+    if not users:
+        logger.info("No users to check")
+        return
+
     headers = {
         'Authorization': DISCORD_API_KEY
     }
 
     guild = bot.get_guild(DISCORD_GUILD_ID)
+    if not guild:
+        logger.error(f"Guild {DISCORD_GUILD_ID} not found")
+        return
+
     role = discord.utils.get(guild.roles, id=ROLE_ID)
+    if not role:
+        logger.error(f"Role {ROLE_ID} not found")
+        return
 
+    chunk_size = 10
+    user_ids = list(users.keys())
+    total_users = len(user_ids)
     removed_users = []
-    rate_limit_count = 0
-    base_delay = 2.0
 
-    logger.info(f"Checking {len(users)} users")
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for chunk_start in range(0, total_users, chunk_size):
+            chunk_end = min(chunk_start + chunk_size, total_users)
+            chunk = user_ids[chunk_start:chunk_end]
 
-    for index, (user_id, user_info) in enumerate(list(users.items())):
-        try:
-            current_delay = base_delay * (1.5 ** rate_limit_count)
+            logger.info(f"Processing users {chunk_start + 1}-{chunk_end} of {total_users}")
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f'https://discord.com/api/v10/users/{user_id}', headers=headers) as resp:
-                    remaining = resp.headers.get('X-RateLimit-Remaining')
-                    if remaining:
-                        logger.debug(f"Rate limit remaining: {remaining}")
+            tasks = []
+            for user_id in chunk:
+                tasks.append(check_user_clan_tag(session, user_id, headers))
 
-                    if resp.status == 200:
-                        user_data = await resp.json()
-                        rate_limit_count = 0
+            results = await asyncio.gather(*tasks)
 
-                        if not (user_data.get('clan') and user_data['clan'].get('tag') == REQUIRED_TAG and user_data['clan'].get('identity_guild_id') == REQUIRED_GUILD_ID):
-                            member = guild.get_member(int(user_id))
-                            if member and role in member.roles:
+            for i, (user_id, (user_data, error)) in enumerate(zip(chunk, results)):
+                if error:
+                    logger.error(f"Failed to check user {user_id}: {error}")
+                    continue
+
+                if user_data:
+                    has_valid_tag = (
+                            user_data.get('clan') and
+                            user_data['clan'].get('tag') == REQUIRED_TAG and
+                            user_data['clan'].get('identity_guild_id') == REQUIRED_GUILD_ID
+                    )
+
+                    if not has_valid_tag:
+                        member = guild.get_member(int(user_id))
+                        if member and role in member.roles:
+                            try:
                                 await member.remove_roles(role)
-                                del users[user_id]
                                 removed_users.append(user_id)
                                 logger.info(f"Removed role from user {user_id} - clan tag no longer valid")
-                    elif resp.status == 429:
-                        rate_limit_count += 1
-                        retry_after = float(resp.headers.get('Retry-After', 60))
-                        logger.warning(f"Rate limited (count: {rate_limit_count}) on user {index + 1}/{len(users)}, waiting {retry_after} seconds")
-                        await asyncio.sleep(retry_after + 5)
-                        continue
-                    else:
-                        logger.error(f"Failed to check user {user_id}: Status {resp.status}")
+                            except Exception as err:
+                                logger.error(f"Failed to remove role from user {user_id}: {err}")
 
-            if (index + 1) % 5 == 0:
-                logger.info(f"Progress: {index + 1}/{len(users)} users checked")
+            if chunk_end < total_users:
+                await asyncio.sleep(2)
 
-            await asyncio.sleep(current_delay)
+    if removed_users:
+        for user_id in removed_users:
+            if user_id in users:
+                del users[user_id]
 
-        except Exception as err:
-            logger.error(f"Error checking user {user_id}: {err}")
-            continue
+        with open('users.json', 'w') as f:
+            json.dump(users, f, indent=4)
 
-    with open('users.json', 'w') as f:
-        json.dump(users, f, indent=4)
-
-    logger.info(f"Daily clan check completed. Removed {len(removed_users)} users")
+    logger.info(f"Daily clan check completed. Removed {len(removed_users)} users from {total_users} total")
 
 
 @daily_clan_check.before_loop
