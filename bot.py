@@ -176,13 +176,45 @@ async def setup_claim_message():
         json.dump({'message_id': sent_message.id}, f)
 
 
-async def check_user_clan_tag(session, user_id, headers):
+class RateLimiter:
+    def __init__(self):
+        self.reset_time = None
+        self.remaining = None
+        self.bucket_exhausted = False
+
+    def update_from_headers(self, headers):
+        self.remaining = int(headers.get('X-RateLimit-Remaining', 0))
+        reset_timestamp = headers.get('X-RateLimit-Reset')
+        if reset_timestamp:
+            self.reset_time = datetime.fromtimestamp(int(reset_timestamp))
+
+        if self.remaining == 0:
+            self.bucket_exhausted = True
+
+    def should_wait(self):
+        if self.bucket_exhausted and self.reset_time:
+            now = datetime.now()
+            if now < self.reset_time:
+                wait_time = (self.reset_time - now).total_seconds()
+                return True, wait_time
+        return False, 0
+
+
+async def check_user_clan_tag(session, user_id, headers, rate_limiter):
     max_retries = 3
     base_delay = 1.0
 
     for attempt in range(max_retries):
         try:
+            should_wait, wait_time = rate_limiter.should_wait()
+            if should_wait:
+                logger.info(f"Rate limit bucket exhausted, waiting {wait_time:.1f}s before continuing")
+                await asyncio.sleep(wait_time + 1)
+                rate_limiter.bucket_exhausted = False
+
             async with session.get(f'https://discord.com/api/v10/users/{user_id}', headers=headers) as resp:
+                rate_limiter.update_from_headers(resp.headers)
+
                 remaining = resp.headers.get('X-RateLimit-Remaining')
                 if remaining:
                     logger.debug(f"Rate limit remaining: {remaining}")
@@ -236,12 +268,14 @@ async def daily_clan_check():
         logger.error(f"Role {ROLE_ID} not found")
         return
 
-    chunk_size = 10
+    rate_limiter = RateLimiter()
+
+    chunk_size = 5
     user_ids = list(users.keys())
     total_users = len(user_ids)
     removed_users = []
 
-    timeout = aiohttp.ClientTimeout(total=10)
+    timeout = aiohttp.ClientTimeout(total=30)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         for chunk_start in range(0, total_users, chunk_size):
             chunk_end = min(chunk_start + chunk_size, total_users)
@@ -249,13 +283,9 @@ async def daily_clan_check():
 
             logger.info(f"Processing users {chunk_start + 1}-{chunk_end} of {total_users}")
 
-            tasks = []
             for user_id in chunk:
-                tasks.append(check_user_clan_tag(session, user_id, headers))
+                user_data, error = await check_user_clan_tag(session, user_id, headers, rate_limiter)
 
-            results = await asyncio.gather(*tasks)
-
-            for i, (user_id, (user_data, error)) in enumerate(zip(chunk, results)):
                 if error:
                     logger.error(f"Failed to check user {user_id}: {error}")
                     continue
@@ -277,8 +307,10 @@ async def daily_clan_check():
                             except Exception as err:
                                 logger.error(f"Failed to remove role from user {user_id}: {err}")
 
+                await asyncio.sleep(0.5)
+
             if chunk_end < total_users:
-                await asyncio.sleep(2)
+                await asyncio.sleep(5)
 
     if removed_users:
         for user_id in removed_users:
@@ -295,6 +327,12 @@ async def daily_clan_check():
 async def before_daily_check():
     await bot.wait_until_ready()
     logger.info("Bot is ready, daily check will start")
+
+
+@daily_clan_check.error
+async def daily_clan_check_error(error):
+    logger.error(f"Error in daily clan check: {error}")
+    await asyncio.sleep(300)
 
 
 try:
