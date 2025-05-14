@@ -22,7 +22,7 @@ intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 
-bot = commands.Bot(intents=intents)
+bot = commands.Bot(command_prefix='', intents=intents)
 
 
 def ensure_json_files():
