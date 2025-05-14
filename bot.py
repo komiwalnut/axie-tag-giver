@@ -63,16 +63,6 @@ class ClaimRoleView(discord.ui.View):
                     if user_data.get('clan') and user_data['clan'].get('tag') == REQUIRED_TAG and user_data['clan'].get('identity_guild_id') == REQUIRED_GUILD_ID:
                         role = discord.utils.get(interaction.guild.roles, id=ROLE_ID)
 
-                        if not role:
-                            logger.error(f"Role with ID {ROLE_ID} not found")
-                            embed = discord.Embed(
-                                title="Configuration Error",
-                                description="The configured role was not found. Please contact an administrator.",
-                                color=discord.Color.red()
-                            )
-                            await interaction.followup.send(embed=embed, ephemeral=True)
-                            return
-
                         if role not in interaction.user.roles:
                             try:
                                 await interaction.user.add_roles(role)
@@ -91,19 +81,9 @@ class ClaimRoleView(discord.ui.View):
 
                                 embed = discord.Embed(
                                     title="Success!",
-                                    description=f"You have been given the {role.name} role!",
+                                    description=f"You have been given the <@&1371506589806100590> role!",
                                     color=discord.Color.green()
                                 )
-                                await interaction.followup.send(embed=embed, ephemeral=True)
-                            except discord.Forbidden:
-                                logger.error(f"Missing permissions to add role to user {user_id}")
-                                embed = discord.Embed(
-                                    title="Permission Error",
-                                    description="I don't have permission to assign this role. Please contact an administrator.",
-                                    color=discord.Color.red()
-                                )
-                                embed.add_field(name="Possible fixes:",
-                                                value="1. Make sure the bot has 'Manage Roles' permission\n2. Make sure the bot's role is higher than the role being assigned in the role hierarchy")
                                 await interaction.followup.send(embed=embed, ephemeral=True)
                             except Exception as err:
                                 logger.error(f"Unexpected error when adding role to user {user_id}: {err}")
