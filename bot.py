@@ -186,7 +186,7 @@ class RateLimiter:
         self.remaining = int(headers.get('X-RateLimit-Remaining', 0))
         reset_timestamp = headers.get('X-RateLimit-Reset')
         if reset_timestamp:
-            self.reset_time = datetime.fromtimestamp(int(reset_timestamp))
+            self.reset_time = datetime.fromtimestamp(int(float(reset_timestamp)))
 
         if self.remaining == 0:
             self.bucket_exhausted = True
