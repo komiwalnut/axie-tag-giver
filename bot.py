@@ -205,7 +205,11 @@ async def daily_clan_check():
     logger.info(f"Checking {len(users)} users")
 
     for index, (user_id, user_info) in enumerate(list(users.items())):
+        username = user_info.get('username', 'Unknown') if user_info else 'Unknown'
+
         try:
+            logger.info(f"Checking user {index + 1}/{len(users)}: {username} (ID: {user_id})")
+
             current_delay = base_delay * (1.5 ** rate_limit_count)
 
             async with aiohttp.ClientSession() as session:
@@ -218,35 +222,58 @@ async def daily_clan_check():
                         user_data = await resp.json()
                         rate_limit_count = 0
 
+                        clan_tag = user_data.get('clan', {}).get('tag', 'None')
+                        clan_guild_id = user_data.get('clan', {}).get('identity_guild_id', 'None')
+
+                        logger.info(f"  User: {user_data.get('username', 'Unknown')}#{user_data.get('discriminator', '0000')}")
+                        logger.info(f"  Clan Tag: {clan_tag} (Required: {REQUIRED_TAG})")
+                        logger.info(f"  Clan Guild ID: {clan_guild_id} (Required: {REQUIRED_GUILD_ID})")
+
                         if not (user_data.get('clan') and user_data['clan'].get('tag') == REQUIRED_TAG and user_data['clan'].get('identity_guild_id') == REQUIRED_GUILD_ID):
                             member = guild.get_member(int(user_id))
                             if member and role in member.roles:
                                 await member.remove_roles(role)
                                 del users[user_id]
-                                removed_users.append(user_id)
-                                logger.info(f"Removed role from user {user_id} - clan tag no longer valid")
+                                removed_users.append({
+                                    'user_id': user_id,
+                                    'username': username,
+                                    'clan_tag': clan_tag
+                                })
+                                logger.info(f"  ✗ Removed role - clan tag is '{clan_tag}' instead of '{REQUIRED_TAG}'")
+                            else:
+                                logger.info(f"  ✗ Invalid tag but user doesn't have the role")
+                        else:
+                            logger.info(f"  ✓ Valid AXIE tag confirmed")
+
                     elif resp.status == 429:
                         rate_limit_count += 1
                         retry_after = float(resp.headers.get('Retry-After', 60))
-                        logger.warning(f"Rate limited (count: {rate_limit_count}) on user {index + 1}/{len(users)}, waiting {retry_after} seconds")
+                        logger.warning(f"Rate limited (count: {rate_limit_count}) on user {username} ({index + 1}/{len(users)}), waiting {retry_after} seconds")
                         await asyncio.sleep(retry_after + 5)
                         continue
                     else:
-                        logger.error(f"Failed to check user {user_id}: Status {resp.status}")
+                        logger.error(f"Failed to check user {username} (ID: {user_id}): Status {resp.status}")
 
-            if (index + 1) % 5 == 0:
-                logger.info(f"Progress: {index + 1}/{len(users)} users checked")
+            if (index + 1) % 10 == 0:
+                logger.info(f"=== Progress: {index + 1}/{len(users)} users checked ===")
 
             await asyncio.sleep(current_delay)
 
         except Exception as err:
-            logger.error(f"Error checking user {user_id}: {err}")
+            logger.error(f"Error checking user {username} (ID: {user_id}): {err}")
             continue
 
     with open('users.json', 'w') as f:
         json.dump(users, f, indent=4)
 
-    logger.info(f"Daily clan check completed. Removed {len(removed_users)} users")
+    logger.info("=" * 50)
+    logger.info(f"Daily clan check completed")
+    logger.info(f"Total users checked: {len(users) + len(removed_users)}")
+    logger.info(f"Users removed: {len(removed_users)}")
+    if removed_users:
+        for user in removed_users:
+            logger.info(f"  - {user['username']} had tag '{user['clan_tag']}'")
+    logger.info("=" * 50)
 
 
 @daily_clan_check.before_loop
