@@ -88,7 +88,6 @@ async def check_user_has_role(guild_id, user_id, role_id):
 class ClaimRoleView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(discord.ui.Button(label='Join Server', style=discord.ButtonStyle.link, url=SERVER_LINK))
 
     @discord.ui.button(label='Claim Role', style=discord.ButtonStyle.danger, custom_id='claim_role_button')
     async def claim_role(self, interaction: discord.Interaction, _: discord.ui.Button):
@@ -108,17 +107,6 @@ class ClaimRoleView(discord.ui.View):
 
                 if user_data.get('clan') and user_data['clan'].get('tag') == REQUIRED_TAG and user_data['clan'].get('identity_guild_id') == REQUIRED_GUILD_ID:
                     role = discord.utils.get(interaction.guild.roles, id=ROLE_ID)
-
-                    if not role:
-                        logger.error(f"Role with ID {ROLE_ID} not found")
-                        embed = discord.Embed(
-                            title="Configuration Error",
-                            description="The configured role was not found. Please contact an administrator.",
-                            color=discord.Color.red()
-                        )
-                        await interaction.followup.send(embed=embed, ephemeral=True)
-                        return
-
                     has_role = await check_user_has_role(interaction.guild.id, user_id, ROLE_ID)
 
                     if not has_role:
@@ -147,7 +135,7 @@ class ClaimRoleView(discord.ui.View):
                         else:
                             embed = discord.Embed(
                                 title="Error",
-                                description="Failed to assign the role. Please contact an administrator.",
+                                description="Failed to assign the role. Please try claiming again.",
                                 color=discord.Color.red()
                             )
                             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -162,8 +150,8 @@ class ClaimRoleView(discord.ui.View):
                 else:
                     logger.info(f"User {user_id} does not have required server tag")
                     embed = discord.Embed(
-                        title="Required Server Tag Not Found",
-                        description=f"You need to have the [{REQUIRED_TAG}] server tag to claim this role.\n\n[Join our server]({SERVER_LINK})",
+                        title="You Don't Have the Required Server Tag",
+                        description=f"You need to have the `[{REQUIRED_TAG}]` server tag to claim this role.\n\n[Go check this post](https://discord.com/channels/410537146672349205/414758518101639188/1372449656721903647)",
                         color=discord.Color.red()
                     )
                     await interaction.followup.send(embed=embed, ephemeral=True)
