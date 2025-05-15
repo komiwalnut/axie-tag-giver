@@ -74,9 +74,9 @@ nohup python3 -u bot.py > /dev/null 2>&1 &
 
 ```
 axie-tag-giver/
-├── bot.py              # Main bot code
-├── config.py           # Configuration settings
-├── requirements.txt    # Python dependencies
+├── axietag.py         # Main bot code
+├── config.py          # Configuration settings
+├── requirements.txt   # Python dependencies
 ├── .env               # Environment variables (not in repo)
 ├── users.json         # Tracks users with the role (auto-created)
 ├── message_id.json    # Tracks the claim message ID (auto-created)
