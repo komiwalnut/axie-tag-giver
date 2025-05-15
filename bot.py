@@ -106,10 +106,16 @@ class ClaimRoleView(discord.ui.View):
                 logger.debug(f"API response for {user_id}: {user_data}")
 
                 if user_data.get('clan') and user_data['clan'].get('tag') == REQUIRED_TAG and user_data['clan'].get('identity_guild_id') == REQUIRED_GUILD_ID:
-                    role = discord.utils.get(interaction.guild.roles, id=ROLE_ID)
                     has_role = await check_user_has_role(interaction.guild.id, user_id, ROLE_ID)
 
-                    if not has_role:
+                    if has_role:
+                        logger.info(f"User {user_id} already has the role")
+                        embed = discord.Embed(
+                            description="You already have this role!",
+                            color=discord.Color.orange()
+                        )
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                    else:
                         success = await add_role_via_api(interaction.guild.id, user_id, ROLE_ID)
 
                         if success:
@@ -128,25 +134,18 @@ class ClaimRoleView(discord.ui.View):
 
                             embed = discord.Embed(
                                 title="Success!",
-                                description=f"You have been given the <@&1371506589806100590> role!",
+                                description=f"You have been given the <@&{ROLE_ID}> role!",
                                 color=discord.Color.green()
                             )
                             await interaction.followup.send(embed=embed, ephemeral=True)
                         else:
+                            logger.error(f"Failed to add role to user {user_id}")
                             embed = discord.Embed(
                                 title="Error",
                                 description="Failed to assign the role. Please try claiming again.",
                                 color=discord.Color.red()
                             )
                             await interaction.followup.send(embed=embed, ephemeral=True)
-                    else:
-                        logger.info(f"User {user_id} already has the role")
-                        embed = discord.Embed(
-                            title="Already Have Role",
-                            description="You already have this role!",
-                            color=discord.Color.orange()
-                        )
-                        await interaction.followup.send(embed=embed, ephemeral=True)
                 else:
                     logger.info(f"User {user_id} does not have required server tag")
                     embed = discord.Embed(
@@ -175,8 +174,8 @@ async def on_ready():
 
     bot.add_view(ClaimRoleView())
     ensure_json_files()
-    daily_server_check.start()
-    logger.info("Daily server tag check task started")
+    server_check.start()
+    logger.info("Server tag check task started")
 
     await setup_claim_message()
 
@@ -207,7 +206,7 @@ async def setup_claim_message():
 
     embed = discord.Embed(
         title="Claim Your Role",
-        description=f"Claim your <@&1371506589806100590> role if you have the `[{REQUIRED_TAG}]` server tag!",
+        description=f"Claim your <@&{ROLE_ID}> role if you have the `[{REQUIRED_TAG}]` server tag!",
         color=discord.Color.blue()
     )
     sent_message = await channel.send(embed=embed, view=ClaimRoleView())
@@ -218,8 +217,8 @@ async def setup_claim_message():
 
 
 @tasks.loop(hours=8)
-async def daily_server_check():
-    logger.info("Starting daily server tag check")
+async def server_check():
+    logger.info("Starting server tag check")
 
     with open('users.json', 'r') as f:
         users = json.load(f)
@@ -234,6 +233,7 @@ async def daily_server_check():
         return
 
     removed_users = []
+    readded_users = []
     rate_limit_count = 0
     base_delay = 2.0
 
@@ -252,7 +252,19 @@ async def daily_server_check():
                     user_data = await resp.json()
                     rate_limit_count = 0
 
-                    if not (user_data.get('clan') and user_data['clan'].get('tag') == REQUIRED_TAG and user_data['clan'].get('identity_guild_id') == REQUIRED_GUILD_ID):
+                    if user_data.get('clan') and user_data['clan'].get('tag') == REQUIRED_TAG and user_data['clan'].get('identity_guild_id') == REQUIRED_GUILD_ID:
+                        has_role = await check_user_has_role(guild.id, user_id, ROLE_ID)
+
+                        if not has_role:
+                            success = await add_role_via_api(guild.id, user_id, ROLE_ID)
+                            if success:
+                                readded_users.append(user_id)
+                                logger.info(f"Re-added role to user {user_id} - has correct server tag but was missing role")
+                            else:
+                                logger.error(f"Failed to re-add role to user {user_id}")
+                        else:
+                            logger.debug(f"User {user_id} has correct tag and role")
+                    else:
                         has_role = await check_user_has_role(guild.id, user_id, ROLE_ID)
 
                         if has_role:
@@ -287,13 +299,13 @@ async def daily_server_check():
     with open('users.json', 'w') as f:
         json.dump(users, f, indent=4)
 
-    logger.info(f"Daily server tag check completed. Removed {len(removed_users)} users")
+    logger.info(f"Server tag check completed. Removed {len(removed_users)} users, re-added {len(readded_users)} users")
 
 
-@daily_server_check.before_loop
-async def before_daily_check():
+@server_check.before_loop
+async def before_tag_check():
     await bot.wait_until_ready()
-    logger.info("Bot is ready, daily check will start")
+    logger.info("Bot is ready, server tag check will start")
 
 
 @bot.event
