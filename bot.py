@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import tasks
 import aiohttp
 import json
 import os
@@ -21,7 +21,7 @@ logger = logging.getLogger('axie-tag-bot')
 intents = discord.Intents.default()
 intents.guilds = True
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = discord.Client(intents=intents)
 
 
 def ensure_json_files():
