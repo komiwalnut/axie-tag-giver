@@ -1,5 +1,5 @@
 import discord
-from discord.ext import tasks
+from discord.ext import commands, tasks
 import aiohttp
 import json
 import os
@@ -20,9 +20,8 @@ logger = logging.getLogger('axie-tag-bot')
 
 intents = discord.Intents.default()
 intents.guilds = True
-intents.members = True
 
-bot = discord.Client(intents=intents)
+bot = commands.Bot(command_prefix='!', intents=intents)
 
 
 def ensure_json_files():
@@ -90,7 +89,7 @@ class ClaimRoleView(discord.ui.View):
 
                                 embed = discord.Embed(
                                     title="Success!",
-                                    description=f"You have been given the <@&1371506589806100590> role!",
+                                    description=f"You have been given the {role.name} role!",
                                     color=discord.Color.green()
                                 )
                                 await interaction.followup.send(embed=embed, ephemeral=True)
