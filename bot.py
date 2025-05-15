@@ -89,7 +89,7 @@ class ClaimRoleView(discord.ui.View):
 
                                 embed = discord.Embed(
                                     title="Success!",
-                                    description=f"You have been given the {role.name} role!",
+                                    description=f"You have been given the <@&1371506589806100590> role!",
                                     color=discord.Color.green()
                                 )
                                 await interaction.followup.send(embed=embed, ephemeral=True)
