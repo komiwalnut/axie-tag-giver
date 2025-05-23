@@ -12,8 +12,8 @@ In a way, this is a template bot for roles gated by server tags. A Discord bot t
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/komiwalnut/axie-tag-giver.git
-cd axie-tag-giver
+git clone https://github.com/komiwalnut/discord-role-giver.git
+cd discord-role-giver
 ```
 
 2. Install dependencies:
@@ -73,7 +73,7 @@ nohup python3 -u bot.py > /dev/null 2>&1 &
 ## File Structure
 
 ```
-axie-tag-giver/
+discord-role-giver/
 ├── axietag.py         # Main bot code
 ├── config.py          # Configuration settings
 ├── requirements.txt   # Python dependencies
